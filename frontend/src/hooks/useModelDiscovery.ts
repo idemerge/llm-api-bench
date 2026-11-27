@@ -33,6 +33,7 @@ export function useModelDiscovery() {
       if (id !== requestId.current) return;
       setModels(data.models);
       setLoaded(true);
+      return data.models as string[];
     } catch (err) {
       if (id === requestId.current) setError(err instanceof Error ? err.message : 'Failed to fetch models');
     } finally {

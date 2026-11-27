@@ -37,6 +37,8 @@ describe('validateModelId', () => {
     expect(validateModelId('gpt-4o')).toBeNull();
     expect(validateModelId('glm-5.1')).toBeNull();
     expect(validateModelId('z-ai/glm-4.7')).toBeNull();
+    expect(validateModelId('inclusionai/ling-3.2-flash:free')).toBeNull();
+    expect(validateModelId('combo:smart-free')).toBeNull();
     expect(validateModelId('claude-3.5-sonnet')).toBeNull();
     expect(validateModelId('a'.repeat(64))).toBeNull();
   });

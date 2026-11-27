@@ -108,7 +108,7 @@
     "providerNameRequired": "Provider name is required",
     "providerNamePattern": "1-64 chars: letters, digits, dash, underscore. No spaces.",
     "modelIdRequired": "Model ID is required",
-    "modelIdPattern": "1-64 chars: letters, digits, dash, underscore, dot, slash.",
+    "modelIdPattern": "1-64 chars: letters, digits, dash, underscore, dot, slash, colon.",
     "displayNamePattern": "1-64 chars: letters, digits, space, dash, underscore, dot."
   },
   "settings": {
@@ -138,11 +138,8 @@
     "leaveEmptyToKeepKey": "Leave empty to keep current key",
     "enterApiKey": "Enter API key",
     "fetchModels": "Fetch models",
-    "fetchModelsHint": "Read the OpenAI-compatible /models endpoint using this URL and API key.",
+    "fetchModelsSuccess": "Fetched successfully",
     "noModelsFound": "The API returned no models.",
-    "selectModels": "Search and select models to add",
-    "importModels": "Add selected models ({{count}})",
-    "importModelsHint": "Existing models and IDs unsupported by this app are disabled. Review context size and capabilities after adding.",
     "addModel": "Add Model",
     "modelNumber": "Model #{{number}}",
     "activeLabel": "Active",

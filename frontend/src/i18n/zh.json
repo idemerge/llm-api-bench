@@ -108,7 +108,7 @@
     "providerNameRequired": "请输入服务商名称",
     "providerNamePattern": "1-64 个字符：字母、数字、短横线、下划线，不含空格。",
     "modelIdRequired": "请输入模型 ID",
-    "modelIdPattern": "1-64 个字符：字母、数字、短横线、下划线、点、斜杠。",
+    "modelIdPattern": "1-64 个字符：字母、数字、短横线、下划线、点、斜杠、冒号。",
     "displayNamePattern": "1-64 个字符：字母、数字、空格、短横线、下划线、点。"
   },
   "settings": {
@@ -137,12 +137,9 @@
     "leaveEmptyToKeep": "（留空保持不变）",
     "leaveEmptyToKeepKey": "留空保持当前密钥",
     "enterApiKey": "输入 API 密钥",
-    "fetchModels": "获取模型",
-    "fetchModelsHint": "使用当前地址和密钥读取 OpenAI 兼容的 /models 接口。",
+    "fetchModels": "批量获取",
+    "fetchModelsSuccess": "获取成功",
     "noModelsFound": "接口未返回可用模型。",
-    "selectModels": "搜索并选择要添加的模型",
-    "importModels": "添加所选模型（{{count}}）",
-    "importModelsHint": "已有模型及本应用不支持的模型 ID 无法选择。添加后请核对上下文长度和模型能力。",
     "addModel": "添加模型",
     "modelNumber": "模型 #{{number}}",
     "activeLabel": "活跃",

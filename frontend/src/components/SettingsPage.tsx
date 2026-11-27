@@ -5,7 +5,7 @@ import { ProviderConfigResponse, ProviderFormat } from '../types';
 import { useProviders } from '../hooks/useProviders';
 import { useModelDiscovery } from '../hooks/useModelDiscovery';
 import { Button, Input, InputNumber, Select, Checkbox, Popconfirm, Alert, Tag, Modal } from '../antdImports';
-import { PlusOutlined, ApiOutlined } from '@ant-design/icons';
+import { PlusOutlined, ApiOutlined, CheckOutlined } from '@ant-design/icons';
 import { APP_VERSION } from '../constants';
 import { validateProviderName, validateModelId, validateDisplayName } from '../utils/validation';
 
@@ -71,10 +71,8 @@ export function SettingsPage() {
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const discovery = useModelDiscovery();
-  const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const resetDiscovery = () => {
     discovery.reset();
-    setSelectedModels([]);
   };
 
   useEffect(() => {
@@ -127,15 +125,17 @@ export function SettingsPage() {
           models: form.models,
         };
         if (form.apiKey.trim()) input.apiKey = form.apiKey;
-        await updateProvider(editingId, input);
+        const updated = await updateProvider(editingId, input);
+        if (!updated) return;
       } else {
-        await createProvider({
+        const created = await createProvider({
           name: form.name,
           endpoint: form.endpoint,
           apiKey: form.apiKey,
           format: form.format,
           models: form.models as any,
         });
+        if (!created) return;
       }
       closeForm();
     } finally {
@@ -157,10 +157,17 @@ export function SettingsPage() {
     setForm((prev) => ({ ...prev, models: [...prev.models, { ...EMPTY_MODEL }] }));
   };
 
-  const importModels = () => {
+  const fetchAndImportModels = async () => {
+    const models = await discovery.discover({
+      endpoint: form.endpoint.trim(),
+      apiKey: form.apiKey.trim() || undefined,
+      providerId: editingId || undefined,
+      format: form.format,
+    });
+    if (!models?.length) return;
     setForm((prev) => {
       const existing = new Set(prev.models.map((model) => model.name.trim()));
-      const added = selectedModels.filter((name) => !existing.has(name)).map((name) => ({ ...EMPTY_MODEL, name }));
+      const added = models.filter((name) => !existing.has(name)).map((name) => ({ ...EMPTY_MODEL, name }));
       return {
         ...prev,
         models: [
@@ -171,7 +178,6 @@ export function SettingsPage() {
         ],
       };
     });
-    setSelectedModels([]);
   };
 
   const removeModel = (index: number) => {
@@ -219,7 +225,7 @@ export function SettingsPage() {
           </Button>
         </div>
 
-        {providerError && <Alert type="error" title={providerError} showIcon closable />}
+        {providerError && !showForm && <Alert type="error" title={providerError} showIcon closable />}
 
         {loading && providers.length === 0 && (
           <div className="text-center py-8 text-text-tertiary text-[13px]">{t('settings.loadingProviders')}</div>
@@ -390,6 +396,7 @@ export function SettingsPage() {
           destroyOnHidden
         >
           <div className="space-y-4 py-2">
+            {providerError && <Alert type="error" title={providerError} showIcon />}
             {/* Name & Format */}
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -465,57 +472,31 @@ export function SettingsPage() {
 
             {/* Models */}
             <div>
-              {(form.format === 'openai' || form.format === 'custom') && (
-                <div className="space-y-2 mb-4">
-                  <Button
-                    loading={discovery.loading}
-                    disabled={!form.endpoint.trim() || (!editingId && !form.apiKey.trim())}
-                    onClick={() => {
-                      setSelectedModels([]);
-                      void discovery.discover({
-                        endpoint: form.endpoint.trim(),
-                        apiKey: form.apiKey.trim() || undefined,
-                        providerId: editingId || undefined,
-                        format: form.format,
-                      });
-                    }}
-                  >
-                    {t('settings.fetchModels')}
-                  </Button>
-                  <p className="text-xs text-text-secondary">{t('settings.fetchModelsHint')}</p>
-                  {discovery.error && <Alert type="error" showIcon title={discovery.error} />}
-                  {discovery.loaded && discovery.models.length === 0 && (
-                    <Alert type="info" title={t('settings.noModelsFound')} />
-                  )}
-                  {discovery.loaded && discovery.models.length > 0 && (
-                    <>
-                      <Select
-                        mode="multiple"
-                        aria-label={t('settings.selectModels')}
-                        placeholder={t('settings.selectModels')}
-                        value={selectedModels}
-                        onChange={setSelectedModels}
-                        options={discovery.models.map((name) => ({
-                          value: name,
-                          label: name,
-                          disabled: !!validateModelId(name) || form.models.some((model) => model.name.trim() === name),
-                        }))}
-                        style={{ width: '100%' }}
-                      />
-                      <Button disabled={!selectedModels.length} onClick={importModels}>
-                        {t('settings.importModels', { count: selectedModels.length })}
-                      </Button>
-                      <p className="text-xs text-text-secondary">{t('settings.importModelsHint')}</p>
-                    </>
-                  )}
-                </div>
-              )}
               <div className="flex items-center justify-between mb-2">
                 <label className="text-[11px] text-text-secondary">{t('settings.models')}</label>
-                <Button type="link" size="small" icon={<PlusOutlined />} onClick={addModel}>
-                  {t('settings.addModel')}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {(form.format === 'openai' || form.format === 'custom') && (
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={discovery.loaded ? <CheckOutlined /> : <PlusOutlined />}
+                      loading={discovery.loading}
+                      disabled={!form.endpoint.trim() || (!editingId && !form.apiKey.trim())}
+                      style={discovery.loaded ? { color: 'var(--color-accent-teal)' } : undefined}
+                      onClick={() => void fetchAndImportModels()}
+                    >
+                      {t(discovery.loaded ? 'settings.fetchModelsSuccess' : 'settings.fetchModels')}
+                    </Button>
+                  )}
+                  <Button type="link" size="small" icon={<PlusOutlined />} onClick={addModel}>
+                    {t('settings.addModel')}
+                  </Button>
+                </div>
               </div>
+              {discovery.error && <Alert className="mb-2" type="error" showIcon title={discovery.error} />}
+              {discovery.loaded && discovery.models.length === 0 && (
+                <Alert className="mb-2" type="info" title={t('settings.noModelsFound')} />
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
                 {form.models.map((model, idx) => (
                   <div
