@@ -11,6 +11,7 @@ const fns = vi.hoisted(() => ({
   delete: vi.fn(),
   toResponse: vi.fn(),
   testProviderConnection: vi.fn(),
+  discoverModels: vi.fn(),
   removeTarget: vi.fn(),
   renameTarget: vi.fn(),
   removeTargetsByProvider: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('../services/monitorConfigStore', () => ({
 }));
 
 vi.mock('../providers/adapter', () => ({ testProviderConnection: fns.testProviderConnection }));
+vi.mock('../providers/modelDiscovery', () => ({ discoverModels: fns.discoverModels }));
 
 import providersRouter from './providers';
 
@@ -76,6 +78,57 @@ beforeEach(() => {
   fns.toResponse.mockImplementation((p) => ({ ...p, apiKeyMasked: 'sk-****' }));
 });
 
+describe('POST /api/providers/discover-models', () => {
+  it('lists models before a provider is saved', async () => {
+    fns.discoverModels.mockResolvedValueOnce(['model-a']);
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: 'https://example.com/v1', apiKey: ' key ', format: 'openai' });
+    expect(res.status).toBe(200);
+    expect(res.body.models).toEqual(['model-a']);
+    expect(fns.discoverModels).toHaveBeenCalledWith('https://example.com/v1', 'key');
+    expect(fns.create).not.toHaveBeenCalled();
+  });
+
+  it('reuses a saved key without returning it', async () => {
+    fns.get.mockReturnValueOnce(mockProvider);
+    fns.getDecryptedApiKey.mockReturnValueOnce('secret-key');
+    fns.discoverModels.mockResolvedValueOnce([]);
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: mockProvider.endpoint, providerId: 'p1', format: 'custom' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ models: [] });
+    expect(fns.discoverModels).toHaveBeenCalledWith(mockProvider.endpoint, 'secret-key');
+  });
+
+  it('rejects a missing key and unsupported format', async () => {
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: 'https://example.com', format: 'gemini' });
+    expect(res.status).toBe(400);
+    expect(fns.discoverModels).not.toHaveBeenCalled();
+  });
+
+  it('does not send a stored key to a changed endpoint', async () => {
+    fns.get.mockReturnValueOnce(mockProvider);
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: 'https://other.example.com', providerId: 'p1', format: 'openai' });
+    expect(res.status).toBe(400);
+    expect(fns.discoverModels).not.toHaveBeenCalled();
+  });
+
+  it('surfaces upstream failure without leaking key details', async () => {
+    fns.discoverModels.mockRejectedValueOnce(new Error('secret-key'));
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: 'https://example.com', apiKey: 'secret-key', format: 'openai' });
+    expect(res.status).toBe(502);
+    expect(JSON.stringify(res.body)).not.toContain('secret-key');
+  });
+});
+
 describe('GET /api/providers', () => {
   it('returns list with toResponse-mapped entries', async () => {
     fns.getAll.mockReturnValueOnce([mockProvider]);
@@ -109,6 +162,55 @@ describe('GET /api/providers/:id', () => {
 });
 
 describe('POST /api/providers — create', () => {
+  it('saves all discovered models including colon-delimited variants', async () => {
+    const names = ['big-pickle', 'inclusionai/ling-3.2-flash:free', 'combo:smart-free'];
+    fns.create.mockReturnValueOnce(mockProvider);
+    const res = await request(makeApp())
+      .post('/api/providers')
+      .send({
+        name: 'OurFreeModels',
+        endpoint: 'http://127.0.0.1:18900/v1',
+        apiKey: 'test-key',
+        format: 'openai',
+        models: names.map((name) => ({ ...baseModel, name, displayName: '' })),
+      });
+    expect(res.status).toBe(201);
+    expect(fns.create.mock.calls[0][0].models.map((model: { name: string }) => model.name)).toEqual(names);
+  });
+
+  it.each([undefined, '', '   '])(
+    'accepts optional displayName=%j when creating imported models',
+    async (displayName) => {
+      fns.create.mockReturnValueOnce(mockProvider);
+      const res = await request(makeApp())
+        .post('/api/providers')
+        .send({
+          name: 'OurFreeModels',
+          endpoint: 'http://127.0.0.1:18900/v1',
+          apiKey: 'test-key',
+          format: 'openai',
+          models: [{ ...baseModel, name: 'big-pickle', displayName }],
+        });
+      expect(res.status).toBe(201);
+      expect(fns.create.mock.calls[0][0].models[0].displayName).toBeUndefined();
+    },
+  );
+
+  it('still rejects invalid non-empty display names without creating a provider', async () => {
+    const res = await request(makeApp())
+      .post('/api/providers')
+      .send({
+        name: 'OurFreeModels',
+        endpoint: 'http://127.0.0.1:18900/v1',
+        apiKey: 'test-key',
+        format: 'openai',
+        models: [{ ...baseModel, displayName: 'invalid@name' }],
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Display name');
+    expect(fns.create).not.toHaveBeenCalled();
+  });
+
   it('201 on valid payload, strips trailing slashes from endpoint', async () => {
     fns.create.mockReturnValueOnce(mockProvider);
     const res = await request(makeApp())
@@ -192,6 +294,16 @@ describe('POST /api/providers — create', () => {
 });
 
 describe('PUT /api/providers/:id — update', () => {
+  it.each(['', '   ', '  Big Pickle  '])('accepts and normalizes displayName=%j when editing', async (displayName) => {
+    fns.get.mockReturnValueOnce(mockProvider);
+    fns.update.mockReturnValueOnce(mockProvider);
+    const res = await request(makeApp())
+      .put('/api/providers/p1')
+      .send({ models: [{ ...baseModel, displayName }] });
+    expect(res.status).toBe(200);
+    expect(fns.update.mock.calls[0][1].models[0].displayName).toBe(displayName.trim() || undefined);
+  });
+
   it('200 on success and only updates provided fields', async () => {
     fns.get.mockReturnValue(mockProvider);
     fns.update.mockReturnValueOnce({ ...mockProvider, name: 'renamed' });

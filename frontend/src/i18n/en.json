@@ -108,7 +108,7 @@
     "providerNameRequired": "Provider name is required",
     "providerNamePattern": "1-64 chars: letters, digits, dash, underscore. No spaces.",
     "modelIdRequired": "Model ID is required",
-    "modelIdPattern": "1-64 chars: letters, digits, dash, underscore, dot, slash.",
+    "modelIdPattern": "1-64 chars: letters, digits, dash, underscore, dot, slash, colon.",
     "displayNamePattern": "1-64 chars: letters, digits, space, dash, underscore, dot."
   },
   "settings": {
@@ -137,6 +137,9 @@
     "leaveEmptyToKeep": "(leave empty to keep current)",
     "leaveEmptyToKeepKey": "Leave empty to keep current key",
     "enterApiKey": "Enter API key",
+    "fetchModels": "Fetch models",
+    "fetchModelsSuccess": "Fetched successfully",
+    "noModelsFound": "The API returned no models.",
     "addModel": "Add Model",
     "modelNumber": "Model #{{number}}",
     "activeLabel": "Active",

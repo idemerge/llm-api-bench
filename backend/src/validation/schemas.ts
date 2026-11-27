@@ -1,9 +1,11 @@
 import { z, ZodSchema } from 'zod';
 
 // --- Shared naming rules ---
-// Model ID: alphanumeric, dash, underscore, dot, slash (for LiteLLM vendor/model), 1-64 chars
-const modelIdRegex = /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,63}$/;
-const modelIdRule = z.string().regex(modelIdRegex, 'Model ID: 1-64 chars, alphanumeric/dash/underscore/dot/slash');
+// Model ID: includes vendor/model paths and colon-delimited variants such as :free.
+const modelIdRegex = /^[a-zA-Z0-9][a-zA-Z0-9._/:-]{0,63}$/;
+const modelIdRule = z
+  .string()
+  .regex(modelIdRegex, 'Model ID: 1-64 chars, alphanumeric/dash/underscore/dot/slash/colon');
 
 // Provider name: alphanumeric, dash, underscore, NO spaces, 1-64 chars
 const providerNameRegex = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
@@ -61,7 +63,10 @@ export const StartBenchmarkSchema = z.object({
 const ModelConfigSchema = z.object({
   id: z.string().min(1).optional(),
   name: modelIdRule,
-  displayName: displayNameRule.optional(),
+  displayName: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim() || undefined : value),
+    displayNameRule.optional(),
+  ),
   contextSize: z.number().int().min(1),
   supportsVision: z.boolean(),
   supportsTools: z.boolean(),
@@ -92,6 +97,19 @@ export const TestConnectionSchema = z.object({
   format: z.enum(['openai', 'anthropic', 'gemini', 'custom']),
   modelName: modelIdRule,
 });
+
+export const DiscoverModelsSchema = z
+  .object({
+    endpoint: z
+      .string()
+      .trim()
+      .url()
+      .refine((value) => /^https?:\/\//i.test(value), 'HTTP(S) endpoint required'),
+    apiKey: z.string().trim().min(1).optional(),
+    providerId: z.string().min(1).optional(),
+    format: z.enum(['openai', 'custom']),
+  })
+  .refine((input) => input.apiKey || input.providerId, 'API key or saved provider is required');
 
 // Workflow schemas
 const WorkflowTaskSchema = z.object({
