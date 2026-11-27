@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { ProviderConfigResponse } from '../types';
+import { ProviderConfigResponse, ProviderFormat } from '../types';
 import { useProviders } from '../hooks/useProviders';
+import { useModelDiscovery } from '../hooks/useModelDiscovery';
 import { Button, Input, InputNumber, Select, Checkbox, Popconfirm, Alert, Tag, Modal } from '../antdImports';
 import { PlusOutlined, ApiOutlined } from '@ant-design/icons';
 import { APP_VERSION } from '../constants';
@@ -22,7 +23,7 @@ interface ProviderFormData {
   name: string;
   endpoint: string;
   apiKey: string;
-  format: string;
+  format: ProviderFormat;
   models: ModelFormData[];
 }
 
@@ -69,18 +70,26 @@ export function SettingsPage() {
     error?: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const discovery = useModelDiscovery();
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const resetDiscovery = () => {
+    discovery.reset();
+    setSelectedModels([]);
+  };
 
   useEffect(() => {
     fetchProviders();
   }, [fetchProviders]);
 
   const openCreateForm = () => {
+    resetDiscovery();
     setForm({ ...EMPTY_FORM });
     setEditingId(null);
     setShowForm(true);
   };
 
   const openEditForm = (provider: ProviderConfigResponse) => {
+    resetDiscovery();
     setForm({
       name: provider.name,
       endpoint: provider.endpoint,
@@ -101,6 +110,7 @@ export function SettingsPage() {
   };
 
   const closeForm = () => {
+    resetDiscovery();
     setShowForm(false);
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
@@ -145,6 +155,23 @@ export function SettingsPage() {
 
   const addModel = () => {
     setForm((prev) => ({ ...prev, models: [...prev.models, { ...EMPTY_MODEL }] }));
+  };
+
+  const importModels = () => {
+    setForm((prev) => {
+      const existing = new Set(prev.models.map((model) => model.name.trim()));
+      const added = selectedModels.filter((name) => !existing.has(name)).map((name) => ({ ...EMPTY_MODEL, name }));
+      return {
+        ...prev,
+        models: [
+          ...prev.models.filter((model) =>
+            Object.entries(EMPTY_MODEL).some(([key, value]) => model[key as keyof ModelFormData] !== value),
+          ),
+          ...added,
+        ],
+      };
+    });
+    setSelectedModels([]);
   };
 
   const removeModel = (index: number) => {
@@ -384,7 +411,10 @@ export function SettingsPage() {
                 <label className="text-[11px] text-text-secondary mb-1 block">{t('settings.format')}</label>
                 <Select
                   value={form.format}
-                  onChange={(val) => setForm((prev) => ({ ...prev, format: val }))}
+                  onChange={(val) => {
+                    resetDiscovery();
+                    setForm((prev) => ({ ...prev, format: val }));
+                  }}
                   options={[
                     { value: 'openai', label: t('settings.formatOpenAI') },
                     { value: 'anthropic', label: t('settings.formatAnthropic') },
@@ -410,7 +440,10 @@ export function SettingsPage() {
                         : 'https://your-api-endpoint.com/v1'
                 }
                 value={form.endpoint}
-                onChange={(e) => setForm((prev) => ({ ...prev, endpoint: e.target.value }))}
+                onChange={(e) => {
+                  resetDiscovery();
+                  setForm((prev) => ({ ...prev, endpoint: e.target.value }));
+                }}
               />
             </div>
 
@@ -423,19 +456,67 @@ export function SettingsPage() {
               <Input.Password
                 placeholder={editingId ? t('settings.leaveEmptyToKeepKey') : t('settings.enterApiKey')}
                 value={form.apiKey}
-                onChange={(e) => setForm((prev) => ({ ...prev, apiKey: e.target.value }))}
+                onChange={(e) => {
+                  resetDiscovery();
+                  setForm((prev) => ({ ...prev, apiKey: e.target.value }));
+                }}
               />
             </div>
 
             {/* Models */}
             <div>
+              {(form.format === 'openai' || form.format === 'custom') && (
+                <div className="space-y-2 mb-4">
+                  <Button
+                    loading={discovery.loading}
+                    disabled={!form.endpoint.trim() || (!editingId && !form.apiKey.trim())}
+                    onClick={() => {
+                      setSelectedModels([]);
+                      void discovery.discover({
+                        endpoint: form.endpoint.trim(),
+                        apiKey: form.apiKey.trim() || undefined,
+                        providerId: editingId || undefined,
+                        format: form.format,
+                      });
+                    }}
+                  >
+                    {t('settings.fetchModels')}
+                  </Button>
+                  <p className="text-xs text-text-secondary">{t('settings.fetchModelsHint')}</p>
+                  {discovery.error && <Alert type="error" showIcon title={discovery.error} />}
+                  {discovery.loaded && discovery.models.length === 0 && (
+                    <Alert type="info" title={t('settings.noModelsFound')} />
+                  )}
+                  {discovery.loaded && discovery.models.length > 0 && (
+                    <>
+                      <Select
+                        mode="multiple"
+                        aria-label={t('settings.selectModels')}
+                        placeholder={t('settings.selectModels')}
+                        value={selectedModels}
+                        onChange={setSelectedModels}
+                        options={discovery.models.map((name) => ({
+                          value: name,
+                          label: name,
+                          disabled: !!validateModelId(name) || form.models.some((model) => model.name.trim() === name),
+                        }))}
+                        style={{ width: '100%' }}
+                      />
+                      <Button disabled={!selectedModels.length} onClick={importModels}>
+                        {t('settings.importModels', { count: selectedModels.length })}
+                      </Button>
+                      <p className="text-xs text-text-secondary">{t('settings.importModelsHint')}</p>
+                    </>
+                  )}
+                </div>
+              )}
               <div className="flex items-center justify-between mb-2">
                 <label className="text-[11px] text-text-secondary">{t('settings.models')}</label>
                 <Button type="link" size="small" icon={<PlusOutlined />} onClick={addModel}>
                   {t('settings.addModel')}
                 </Button>
               </div>
-              <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
                 {form.models.map((model, idx) => (
                   <div
                     key={idx}

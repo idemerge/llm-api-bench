@@ -93,6 +93,19 @@ export const TestConnectionSchema = z.object({
   modelName: modelIdRule,
 });
 
+export const DiscoverModelsSchema = z
+  .object({
+    endpoint: z
+      .string()
+      .trim()
+      .url()
+      .refine((value) => /^https?:\/\//i.test(value), 'HTTP(S) endpoint required'),
+    apiKey: z.string().trim().min(1).optional(),
+    providerId: z.string().min(1).optional(),
+    format: z.enum(['openai', 'custom']),
+  })
+  .refine((input) => input.apiKey || input.providerId, 'API key or saved provider is required');
+
 // Workflow schemas
 const WorkflowTaskSchema = z.object({
   name: z.string().min(1, 'Task name is required'),

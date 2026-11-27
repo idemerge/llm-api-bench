@@ -11,6 +11,7 @@ const fns = vi.hoisted(() => ({
   delete: vi.fn(),
   toResponse: vi.fn(),
   testProviderConnection: vi.fn(),
+  discoverModels: vi.fn(),
   removeTarget: vi.fn(),
   renameTarget: vi.fn(),
   removeTargetsByProvider: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('../services/monitorConfigStore', () => ({
 }));
 
 vi.mock('../providers/adapter', () => ({ testProviderConnection: fns.testProviderConnection }));
+vi.mock('../providers/modelDiscovery', () => ({ discoverModels: fns.discoverModels }));
 
 import providersRouter from './providers';
 
@@ -74,6 +76,57 @@ delete (maskedResp as Record<string, unknown>).apiKey;
 beforeEach(() => {
   vi.clearAllMocks();
   fns.toResponse.mockImplementation((p) => ({ ...p, apiKeyMasked: 'sk-****' }));
+});
+
+describe('POST /api/providers/discover-models', () => {
+  it('lists models before a provider is saved', async () => {
+    fns.discoverModels.mockResolvedValueOnce(['model-a']);
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: 'https://example.com/v1', apiKey: ' key ', format: 'openai' });
+    expect(res.status).toBe(200);
+    expect(res.body.models).toEqual(['model-a']);
+    expect(fns.discoverModels).toHaveBeenCalledWith('https://example.com/v1', 'key');
+    expect(fns.create).not.toHaveBeenCalled();
+  });
+
+  it('reuses a saved key without returning it', async () => {
+    fns.get.mockReturnValueOnce(mockProvider);
+    fns.getDecryptedApiKey.mockReturnValueOnce('secret-key');
+    fns.discoverModels.mockResolvedValueOnce([]);
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: mockProvider.endpoint, providerId: 'p1', format: 'custom' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ models: [] });
+    expect(fns.discoverModels).toHaveBeenCalledWith(mockProvider.endpoint, 'secret-key');
+  });
+
+  it('rejects a missing key and unsupported format', async () => {
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: 'https://example.com', format: 'gemini' });
+    expect(res.status).toBe(400);
+    expect(fns.discoverModels).not.toHaveBeenCalled();
+  });
+
+  it('does not send a stored key to a changed endpoint', async () => {
+    fns.get.mockReturnValueOnce(mockProvider);
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: 'https://other.example.com', providerId: 'p1', format: 'openai' });
+    expect(res.status).toBe(400);
+    expect(fns.discoverModels).not.toHaveBeenCalled();
+  });
+
+  it('surfaces upstream failure without leaking key details', async () => {
+    fns.discoverModels.mockRejectedValueOnce(new Error('secret-key'));
+    const res = await request(makeApp())
+      .post('/api/providers/discover-models')
+      .send({ endpoint: 'https://example.com', apiKey: 'secret-key', format: 'openai' });
+    expect(res.status).toBe(502);
+    expect(JSON.stringify(res.body)).not.toContain('secret-key');
+  });
 });
 
 describe('GET /api/providers', () => {

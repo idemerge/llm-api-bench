@@ -2,10 +2,16 @@ import { Router, Request, Response } from 'express';
 import { providerStore } from '../services/providerStore';
 import { monitorConfigStore } from '../services/monitorConfigStore';
 import { testProviderConnection } from '../providers/adapter';
+import { discoverModels } from '../providers/modelDiscovery';
 import { ProviderConfigInput } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { validate } from '../validation/middleware';
-import { ProviderConfigInputSchema, ProviderConfigUpdateSchema, TestConnectionSchema } from '../validation/schemas';
+import {
+  ProviderConfigInputSchema,
+  ProviderConfigUpdateSchema,
+  TestConnectionSchema,
+  DiscoverModelsSchema,
+} from '../validation/schemas';
 
 const router = Router();
 
@@ -61,6 +67,26 @@ router.post('/test-connection', validate(TestConnectionSchema), async (req: Requ
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Connection test failed';
     res.status(502).json({ error: 'Connection test failed', details: message });
+  }
+});
+
+// POST /api/providers/discover-models - List models before saving, or reuse a saved key.
+router.post('/discover-models', validate(DiscoverModelsSchema), async (req: Request, res: Response) => {
+  const { endpoint, apiKey, providerId } = req.body;
+  let key = apiKey;
+  if (!key) {
+    const provider = providerStore.get(providerId);
+    if (!provider) return res.status(404).json({ error: 'Provider not found' });
+    if (provider.endpoint.replace(/\/+$/, '') !== endpoint.replace(/\/+$/, '')) {
+      return res.status(400).json({ error: 'Enter an API key when changing the endpoint' });
+    }
+    key = providerStore.getDecryptedApiKey(providerId);
+    if (!key) return res.status(500).json({ error: 'Failed to decrypt API key' });
+  }
+  try {
+    res.json({ models: await discoverModels(endpoint, key) });
+  } catch {
+    res.status(502).json({ error: 'Could not fetch models. Check the endpoint, API key and /models support.' });
   }
 });
 
